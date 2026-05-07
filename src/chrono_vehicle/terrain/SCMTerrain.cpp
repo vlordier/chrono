@@ -20,6 +20,8 @@
 #include <cstdio>
 #include <cmath>
 #include <queue>
+#include <map>
+#include <set>
 #include <unordered_set>
 #include <limits>
 
@@ -1136,7 +1138,11 @@ void SCMLoader::ComputeInternalForces() {
     };
 
     // Hash-map for vertices with ray-cast hits
+    #ifdef __APPLE__
+    std::map<ChVector2i, HitRecord> hits;
+#else
     std::unordered_map<ChVector2i, HitRecord, CoordHash> hits;
+#endif
 
     m_num_ray_casts = 0;
     m_num_ray_hits = 0;
@@ -1211,7 +1217,11 @@ void SCMLoader::ComputeInternalForces() {
 #else
         GetSystem()->GetNumThreadsChrono();
 #endif
+    #ifdef __APPLE__
+    std::vector<std::map<ChVector2i, HitRecord> > t_hits(nthreads);
+#else
     std::vector<std::unordered_map<ChVector2i, HitRecord, CoordHash> > t_hits(nthreads);
+#endif
 
     // Loop through all active domains (user-defined or default one)
     for (auto& p : m_active_domains) {
@@ -1572,7 +1582,11 @@ void SCMLoader::ComputeInternalForces() {
     m_num_erosion_nodes = 0;
 
     if (m_bulldozing) {
+        #ifdef __APPLE__
+        typedef std::set<ChVector2i> NodeSet;
+#else
         typedef std::unordered_set<ChVector2i, CoordHash> NodeSet;
+#endif
 
         // Maximum level change between neighboring nodes (smoothing phase)
         double dy_lim = m_delta * m_erosion_slope;
