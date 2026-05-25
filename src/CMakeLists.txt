@@ -51,62 +51,44 @@ if (MSVC)
 endif()
 
 #-----------------------------------------------------------------------------
-# Check for C++14 and C++17 support
+# Check for C++17 support
 #-----------------------------------------------------------------------------
 
 # This is a hack -- look for a more robust solution
-set(CH_CXX14 FALSE)
 set(CH_CXX17 FALSE)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     message(STATUS "GCC version:  ${CMAKE_CXX_COMPILER_VERSION}")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.9.9)
-      set(CH_CXX14 TRUE)
-    endif()
     if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0.0)
       set(CH_CXX17 TRUE)
     endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(STATUS "Clang version:  ${CMAKE_CXX_COMPILER_VERSION}")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 3.4)
-      set(CH_CXX14 TRUE)
-    endif()
     if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 7.0)
       set(CH_CXX17 TRUE)
     endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     message(STATUS "Visual Studio version:  ${MSVC_VERSION}")
-    if(MSVC_VERSION GREATER 1800)
-      set(CH_CXX14 TRUE)
-    endif()
     if(MSVC_VERSION GREATER 1914)
       set(CH_CXX17 TRUE)
     endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "PGI")
     # CMake's standard support flags behave strangely with PGI compilers, don't trust them
     message(STATUS "PGI version: ${CMAKE_CXX_COMPILER_VERSION}")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 17.4)
-      message(STATUS "CMAKE_CXX14_STANDARD_COMPILE_OPTION can't be trusted for PGI, manually adding C++14 support")
-      set(CH_CXX14 TRUE)
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.1)
+      message(STATUS "CMAKE_CXX14_STANDARD_COMPILE_OPTION can't be trusted for PGI, manually adding C++17 support")
+      set(CH_CXX17 TRUE)
     endif()
 endif()
 
-if(NOT CH_CXX14)
-   message(ERROR "Chrono requires at least C++14 support")
+if(NOT CH_CXX17)
+   message(ERROR "Chrono requires at least C++17 support")
    return()
 endif()
 
-message(STATUS "C++14 compiler support:  ${CH_CXX14}")
-message(STATUS "C++17 compiler support:  ${CH_CXX17}")
-
-## TODO DARIOM: cleanup
-if(CH_CXX17)
-    set(CMAKE_CXX_STANDARD 17)
-    set(CHRONO_CXX_STANDARD cxx_std_17)
-elseif(CH_CXX14)
-    set(CMAKE_CXX_STANDARD 14)
-    set(CHRONO_CXX_STANDARD cxx_std_14)
-endif()
+message(STATUS "C++17 compiler support: ${CH_CXX17}")
+set(CMAKE_CXX_STANDARD 17)
+set(CHRONO_CXX_STANDARD cxx_std_17)
 
 #-----------------------------------------------------------------------------
 # Allow user to enable whole program optimization (MSVC only)
@@ -320,10 +302,11 @@ set(CHRONO_GPU_BACKEND "AUTO" CACHE STRING "GPU backend for Chrono GPU modules: 
 set_property(CACHE CHRONO_GPU_BACKEND PROPERTY STRINGS AUTO CUDA HIP)
 set(CHRONO_CUDA_ARCHITECTURES "" CACHE STRING "Chrono CUDA architectures")
 set(CHRONO_HIP_ARCHITECTURES "" CACHE STRING "Chrono HIP architectures")
-set(CHRONO_ROCM_ROOT "" CACHE PATH "Explicit ROCm root for HIP builds")
-set(CHRONO_MIN_HIP_VERSION "5.7.0" CACHE STRING "Minimum HIP version required by Chrono")
 mark_as_advanced(FORCE CMAKE_CUDA_ARCHITECTURES)
 mark_as_advanced(FORCE CMAKE_HIP_ARCHITECTURES)
+
+set(CHRONO_ROCM_ROOT "" CACHE PATH "Explicit ROCm root for HIP builds")
+set(CHRONO_HIP_MIN_VERSION "5.7.0" CACHE STRING "Minimum HIP version required by Chrono")
 
 function(chrono_read_hip_version hip_header out_var)
   if(NOT EXISTS "${hip_header}")
@@ -407,7 +390,7 @@ elseif(CHRONO_GPU_BACKEND STREQUAL "CUDA")
   set(_chrono_try_cuda TRUE)
 elseif(CHRONO_GPU_BACKEND STREQUAL "AUTO")
   chrono_find_rocm(_chrono_rocm_root _chrono_rocm_ver)
-  if(_chrono_rocm_root AND _chrono_rocm_ver VERSION_GREATER_EQUAL CHRONO_MIN_HIP_VERSION)
+  if(_chrono_rocm_root AND _chrono_rocm_ver VERSION_GREATER_EQUAL CHRONO_HIP_MIN_VERSION)
     set(_chrono_try_hip TRUE)
   else()
     set(_chrono_try_cuda TRUE)
@@ -494,10 +477,21 @@ if(NOT CHRONO_HIP_FOUND AND (_chrono_try_cuda OR CHRONO_GPU_BACKEND STREQUAL "AU
 endif()
 
 set(CHRONO_GPU_BACKEND ${CHRONO_GPU_BACKEND_RESOLVED})
-#-----------------------------------------------------------------------------
-# HIP + Eigen alignment compatibility
-#-----------------------------------------------------------------------------
 
+# Hide (mark as advanced) variables
+
+if(CHRONO_CUDA_FOUND)
+  mark_as_advanced(FORCE CHRONO_HIP_ARCHITECTURES)
+  mark_as_advanced(FORCE CHRONO_HIP_MIN_VERSION)
+  mark_as_advanced(FORCE CHRONO_ROCM_ROOT)
+endif()
+
+if(CHRONO_HIP_FOUND)
+  mark_as_advanced(FORCE CHRONO_CUDA_ARCHITECTURES)
+endif()
+
+# HIP + Eigen alignment compatibility
+#
 # Some host-side Chrono classes contain fixed-size Eigen objects. With AVX,
 # Eigen may require 32-byte alignment; a few allocation paths used by demos,
 # visualization, or MBS coupling do not guarantee that in all environments.
@@ -505,12 +499,14 @@ set(CHRONO_GPU_BACKEND ${CHRONO_GPU_BACKEND_RESOLVED})
 # reached. Limiting Eigen's maximum static alignment to 16 bytes avoids the
 # fragile 32-byte over-alignment requirement while keeping ordinary
 # SSE-friendly vectorization and without touching CUDA/NVIDIA builds.
-set(CHRONO_HIP_EIGEN_MAX_ALIGN_BYTES "16" CACHE STRING
-    "Maximum Eigen alignment in HIP builds; set to 0 to fully disable fixed-size Eigen over-alignment")
+
 if(CHRONO_HIP_FOUND)
+  set(CHRONO_HIP_EIGEN_MAX_ALIGN_BYTES "16" CACHE STRING "Maximum Eigen alignment in HIP builds; set to 0 to fully disable fixed-size Eigen over-alignment")
+
   target_compile_definitions(Eigen3::Eigen INTERFACE
     EIGEN_MAX_ALIGN_BYTES=${CHRONO_HIP_EIGEN_MAX_ALIGN_BYTES}
     EIGEN_MAX_STATIC_ALIGN_BYTES=${CHRONO_HIP_EIGEN_MAX_ALIGN_BYTES})
+
   message(STATUS "  HIP Eigen max alignment: ${CHRONO_HIP_EIGEN_MAX_ALIGN_BYTES} bytes")
 endif()
 
@@ -953,12 +949,6 @@ else()
   set(CHRONO_HAS_THRUST "#undef CHRONO_HAS_THRUST")
   set(CHRONO_THRUST_VERSION "#undef CHRONO_THRUST_VERSION")
   set(CHRONO_COLLISION "#undef CHRONO_COLLISION")
-endif()
-
-if(CH_CXX17)
-    set(CHRONO_HAS_CXX17 "#define CHRONO_HAS_CXX17")
-else()
-    set(CHRONO_HAS_CXX17 "#undef CHRONO_HAS_CXX17")
 endif()
 
 if(HDF5_FOUND)
