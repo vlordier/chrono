@@ -1274,8 +1274,13 @@ unsigned int ChSystem::ComputeCollisions() {
 
     timer_collision.start();
 
-    // Update all positions of collision models: delegate this to the ChAssembly
-    assembly.SyncCollisionModels();
+    // Ensure all collision models are registered in the collision system.
+    // AddCollisionModelsToSystem is idempotent — it skips models that already
+    // have a collision-system implementation, so it's safe to call every frame.
+    if (collision_system)
+        assembly.AddCollisionModelsToSystem(collision_system.get());
+
+    // Ensure all collision models are registered in the collision system.\n    // AddCollisionModelsToSystem is idempotent — it skips models that already\n    // have a collision-system implementation, so it's safe to call every frame.\n    if (collision_system)\n        assembly.AddCollisionModelsToSystem(collision_system.get());\n\n    // Update all positions of collision models: delegate this to the ChAssembly\n    assembly.SyncCollisionModels();
 
     // Perform the collision detection ( broadphase and narrowphase )
     collision_system->PreProcess();

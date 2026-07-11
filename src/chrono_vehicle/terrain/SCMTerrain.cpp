@@ -416,8 +416,8 @@ SCMLoader::SCMLoader(ChSystem* system, bool visualization_mesh) : m_soil_fun(nul
     m_plot_v_min = 0;
     m_plot_v_max = 0.2;
 
-    m_test_offset_up = 0.1;
-    m_test_offset_down = 0.5;
+    m_test_offset_up = 0.5;
+    m_test_offset_down = 1.0;
 
     m_boundary = false;
     m_user_domains = false;
